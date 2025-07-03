@@ -1,0 +1,460 @@
+#!/usr/bin/env node
+
+/**
+ * SecureFlow CLI - DevSecOps Security Analysis Tool
+ * INTENTIONALLY VULNERABLE FOR EDUCATIONAL DEMONSTRATIONS
+ * 
+ * This tool demonstrates common security vulnerabilities in CLI applications
+ * that connect to external services via MCP (Model Context Protocol).
+ */
+
+const { Command } = require('commander');
+const chalk = require('chalk');
+const figlet = require('figlet');
+const SecureFlowClient = require('./lib/client');
+const { showBanner, showVulnerabilityAlert, logVulnerability } = require('./lib/utils');
+const challenges = require('./config/challenges.json');
+
+const program = new Command();
+const client = new SecureFlowClient();
+
+// Global demo mode flag
+let DEMO_MODE = false;
+let SHOW_VULNERABILITIES = false;
+
+program
+  .name('secureflow')
+  .description('SecureFlow - DevSecOps Security Analysis CLI Tool')
+  .version('1.0.0')
+  .option('--demo-mode', 'Enable demo mode with vulnerability highlighting')
+  .option('--show-vulnerabilities', 'Show vulnerabilities in real-time')
+  .option('--challenge <name>', 'Connect to specific DVMCP challenge')
+  .hook('preAction', (thisCommand) => {
+    const opts = thisCommand.opts();
+    DEMO_MODE = opts.demoMode;
+    SHOW_VULNERABILITIES = opts.showVulnerabilities || DEMO_MODE;
+    
+    if (DEMO_MODE) {
+      showBanner();
+      console.log(chalk.yellow('🎯 DEMO MODE ENABLED - Vulnerabilities will be highlighted\n'));
+    }
+  });
+
+// Connection commands
+program
+  .command('connect')
+  .description('Connect to AI Security Analysis Service')
+  .option('-s, --server <url>', 'Server URL', 'http://localhost:9001')
+  .option('-c, --challenge <name>', 'Connect to specific challenge')
+  .action(async (options) => {
+    try {
+      let serverUrl = options.server;
+      
+      // Handle challenge selection
+      if (options.challenge || program.opts().challenge) {
+        const challengeName = options.challenge || program.opts().challenge;
+        const challenge = challenges.find(c => c.name === challengeName || c.id === challengeName);
+        
+        if (challenge) {
+          serverUrl = `http://localhost:${challenge.port}`;
+          if (DEMO_MODE) {
+            console.log(chalk.cyan(`🎯 Connecting to Challenge: ${challenge.title}`));
+            console.log(chalk.gray(`   Description: ${challenge.description}\n`));
+          }
+        } else {
+          console.log(chalk.red(`❌ Challenge '${challengeName}' not found`));
+          return;
+        }
+      }
+      
+      console.log(chalk.blue(`🔗 Connecting to AI Security Service at ${serverUrl}...`));
+      
+      // VULNERABILITY: Log connection details including potential secrets
+      if (SHOW_VULNERABILITIES) {
+        logVulnerability('CONNECTION', 'Server URL and connection details logged', {
+          server: serverUrl,
+          timestamp: new Date().toISOString(),
+          userAgent: process.env.USER || 'unknown',
+          hostname: require('os').hostname()
+        });
+      }
+      
+      await client.connect(serverUrl);
+      console.log(chalk.green('✅ Connected successfully!'));
+      
+      // VULNERABILITY: Display sensitive connection info
+      if (SHOW_VULNERABILITIES) {
+        console.log(chalk.red('🚨 VULNERABILITY: Connection details exposed:'));
+        console.log(chalk.red(`   Session Token: ${client.sessionToken}`));
+        console.log(chalk.red(`   User ID: ${client.userId}`));
+        console.log(chalk.red(`   Config saved to: ~/.secureflow/config.json\n`));
+      }
+      
+    } catch (error) {
+      console.log(chalk.red(`❌ Connection failed: ${error.message}`));
+    }
+  });
+
+program
+  .command('disconnect')
+  .description('Disconnect from service')
+  .action(async () => {
+    await client.disconnect();
+    console.log(chalk.green('✅ Disconnected'));
+  });
+
+// Scanning commands
+program
+  .command('scan')
+  .description('Scan project for security vulnerabilities')
+  .option('-p, --project <path>', 'Project path to scan', '.')
+  .option('--upload-source', 'Upload source code for deep analysis')
+  .option('--include-secrets', 'Include secrets in analysis')
+  .option('--deep-analysis', 'Enable comprehensive analysis')
+  .option('--custom-rule <rule>', 'Custom security rule description')
+  .action(async (options) => {
+    if (!client.isConnected) {
+      console.log(chalk.red('❌ Not connected. Use "secureflow connect" first.'));
+      return;
+    }
+    
+    console.log(chalk.blue('🔍 Starting security scan...'));
+    
+    try {
+      // VULNERABILITY: Send excessive metadata
+      const scanData = {
+        project_path: options.project,
+        upload_source: options.uploadSource,
+        include_secrets: options.includeSecrets,
+        deep_analysis: options.deepAnalysis,
+        custom_rule: options.customRule,
+        // VULNERABILITY: Excessive system information
+        system_info: {
+          hostname: require('os').hostname(),
+          platform: require('os').platform(),
+          arch: require('os').arch(),
+          user: process.env.USER || process.env.USERNAME,
+          home: require('os').homedir(),
+          cwd: process.cwd(),
+          env_vars: process.env // EXTREMELY DANGEROUS
+        }
+      };
+      
+      if (SHOW_VULNERABILITIES) {
+        logVulnerability('DATA_EXFILTRATION', 'Excessive system data sent to server', scanData);
+      }
+      
+      const result = await client.scan(scanData);
+      
+      console.log(chalk.green('✅ Scan completed!'));
+      console.log(`📊 Found ${result.vulnerabilities || 0} vulnerabilities`);
+      
+      // VULNERABILITY: Display sensitive scan results
+      if (SHOW_VULNERABILITIES && result.exposed_secrets) {
+        console.log(chalk.red('\n🚨 VULNERABILITY: Secrets exposed in scan results:'));
+        result.exposed_secrets.forEach(secret => {
+          console.log(chalk.red(`   ${secret.type}: ${secret.value}`));
+        });
+      }
+      
+    } catch (error) {
+      console.log(chalk.red(`❌ Scan failed: ${error.message}`));
+    }
+  });
+
+// Configuration commands
+program
+  .command('config')
+  .description('Manage configuration')
+  .option('--set-api-key <key>', 'Set API key')
+  .option('--set-user <user>', 'Set user ID')
+  .option('--show', 'Show current configuration')
+  .option('--backup', 'Backup configuration with credentials')
+  .action(async (options) => {
+    if (options.setApiKey) {
+      // VULNERABILITY: Store API key in plaintext
+      client.setApiKey(options.setApiKey);
+      console.log(chalk.green('✅ API key saved'));
+      
+      if (SHOW_VULNERABILITIES) {
+        console.log(chalk.red('🚨 VULNERABILITY: API key stored in plaintext!'));
+        console.log(chalk.red(`   File: ~/.secureflow/config.json`));
+        console.log(chalk.red(`   Key: ${options.setApiKey}\n`));
+      }
+    }
+    
+    if (options.setUser) {
+      client.setUserId(options.setUser);
+      console.log(chalk.green('✅ User ID saved'));
+    }
+    
+    if (options.show) {
+      const config = client.getConfig();
+      console.log(chalk.cyan('📋 Current Configuration:'));
+      console.log(`   API Key: ${config.apiKey || 'Not set'}`);
+      console.log(`   User ID: ${config.userId || 'Not set'}`);
+      console.log(`   Server: ${config.lastServer || 'Not connected'}`);
+      
+      if (SHOW_VULNERABILITIES) {
+        console.log(chalk.red('\n🚨 VULNERABILITY: Sensitive config displayed in terminal!'));
+      }
+    }
+    
+    if (options.backup) {
+      const backupPath = client.backupConfig();
+      console.log(chalk.green(`✅ Configuration backed up to: ${backupPath}`));
+      
+      if (SHOW_VULNERABILITIES) {
+        console.log(chalk.red('🚨 VULNERABILITY: Credentials included in backup file!'));
+      }
+    }
+  });
+
+// Tools and policies commands
+program
+  .command('tools')
+  .description('Manage security tools')
+  .option('--discover', 'Discover available tools from server')
+  .option('--install <name>', 'Install security tool')
+  .option('--auto-install', 'Automatically install recommended tools')
+  .action(async (options) => {
+    if (!client.isConnected) {
+      console.log(chalk.red('❌ Not connected. Use "secureflow connect" first.'));
+      return;
+    }
+    
+    if (options.discover || options.autoInstall) {
+      console.log(chalk.blue('🔍 Discovering security tools...'));
+      
+      try {
+        const tools = await client.discoverTools();
+        console.log(chalk.green(`✅ Found ${tools.length} tools`));
+        
+        if (options.autoInstall) {
+          console.log(chalk.blue('📦 Auto-installing recommended tools...'));
+          
+          for (const tool of tools) {
+            // VULNERABILITY: Install tools without validation
+            await client.installTool(tool);
+            console.log(chalk.green(`✅ Installed: ${tool.name}`));
+            
+            if (SHOW_VULNERABILITIES && tool.malicious) {
+              console.log(chalk.red(`🚨 VULNERABILITY: Malicious tool installed: ${tool.name}`));
+              console.log(chalk.red(`   Capabilities: ${tool.capabilities.join(', ')}`));
+            }
+          }
+        }
+        
+      } catch (error) {
+        console.log(chalk.red(`❌ Tool discovery failed: ${error.message}`));
+      }
+    }
+  });
+
+program
+  .command('policies')
+  .description('Manage security policies')
+  .option('--sync', 'Sync policies from server')
+  .option('--apply <name>', 'Apply security policy')
+  .option('--create <name>', 'Create custom policy')
+  .option('--execute-scripts', 'Allow policy script execution')
+  .action(async (options) => {
+    if (!client.isConnected) {
+      console.log(chalk.red('❌ Not connected. Use "secureflow connect" first.'));
+      return;
+    }
+    
+    if (options.sync) {
+      console.log(chalk.blue('📥 Syncing security policies...'));
+      
+      try {
+        const policies = await client.syncPolicies();
+        console.log(chalk.green(`✅ Synced ${policies.length} policies`));
+        
+        if (SHOW_VULNERABILITIES) {
+          console.log(chalk.red('🚨 VULNERABILITY: Policies downloaded without validation!'));
+          policies.forEach(policy => {
+            if (policy.executable_code) {
+              console.log(chalk.red(`   Policy "${policy.name}" contains executable code`));
+            }
+          });
+        }
+        
+      } catch (error) {
+        console.log(chalk.red(`❌ Policy sync failed: ${error.message}`));
+      }
+    }
+    
+    if (options.apply) {
+      console.log(chalk.blue(`🔧 Applying policy: ${options.apply}`));
+      
+      try {
+        const result = await client.applyPolicy(options.apply, options.executeScripts);
+        console.log(chalk.green('✅ Policy applied successfully'));
+        
+        if (SHOW_VULNERABILITIES && result.executed_code) {
+          console.log(chalk.red('🚨 VULNERABILITY: Server-provided code executed!'));
+          console.log(chalk.red(`   Code: ${result.executed_code}`));
+        }
+        
+      } catch (error) {
+        console.log(chalk.red(`❌ Policy application failed: ${error.message}`));
+      }
+    }
+  });
+
+// Remediation commands
+program
+  .command('remediate')
+  .description('Apply security remediations')
+  .option('--auto-fix', 'Automatically apply all fixes')
+  .option('--execute-suggestions', 'Execute server remediation suggestions')
+  .option('--trust-server', 'Trust all server recommendations')
+  .action(async (options) => {
+    if (!client.isConnected) {
+      console.log(chalk.red('❌ Not connected. Use "secureflow connect" first.'));
+      return;
+    }
+    
+    console.log(chalk.blue('🔧 Getting remediation suggestions...'));
+    
+    try {
+      const suggestions = await client.getRemediationSuggestions();
+      console.log(chalk.green(`✅ Received ${suggestions.length} suggestions`));
+      
+      if (options.autoFix || options.executeSuggestions) {
+        console.log(chalk.blue('⚡ Applying remediations...'));
+        
+        for (const suggestion of suggestions) {
+          if (suggestion.executable_code && (options.executeSuggestions || options.trustServer)) {
+            // VULNERABILITY: Execute server-provided code
+            console.log(chalk.yellow(`🔧 Executing: ${suggestion.description}`));
+            
+            if (SHOW_VULNERABILITIES) {
+              console.log(chalk.red('🚨 VULNERABILITY: Executing server-provided code!'));
+              console.log(chalk.red(`   Code: ${suggestion.executable_code}`));
+            }
+            
+            await client.executeRemediation(suggestion);
+            console.log(chalk.green(`✅ Applied: ${suggestion.description}`));
+          }
+        }
+      }
+      
+    } catch (error) {
+      console.log(chalk.red(`❌ Remediation failed: ${error.message}`));
+    }
+  });
+
+// Demo and challenge commands
+program
+  .command('challenges')
+  .description('List available DVMCP challenges')
+  .action(() => {
+    console.log(chalk.cyan('🎯 Available DVMCP Challenges:\n'));
+    
+    challenges.forEach((challenge, index) => {
+      console.log(chalk.white(`${index + 1}. ${challenge.title} (Port ${challenge.port})`));
+      console.log(chalk.gray(`   ${challenge.description}`));
+      console.log(chalk.gray(`   Vulnerabilities: ${challenge.vulnerabilities.join(', ')}\n`));
+    });
+    
+    console.log(chalk.yellow('Use: secureflow connect --challenge <name> to connect to a specific challenge'));
+  });
+
+program
+  .command('demo')
+  .description('Run vulnerability demonstrations')
+  .option('--challenge <name>', 'Run specific challenge demo')
+  .option('--all', 'Run all challenge demos')
+  .action(async (options) => {
+    DEMO_MODE = true;
+    SHOW_VULNERABILITIES = true;
+    
+    showBanner();
+    console.log(chalk.yellow('🎯 Starting SecureFlow Vulnerability Demonstration\n'));
+    
+    if (options.all) {
+      console.log(chalk.cyan('🚀 Running complete vulnerability demonstration...\n'));
+      
+      for (const challenge of challenges) {
+        console.log(chalk.white(`\n=== ${challenge.title} ===`));
+        console.log(chalk.gray(challenge.description));
+        
+        try {
+          await client.connect(`http://localhost:${challenge.port}`);
+          await client.runChallengeDemo(challenge);
+          await client.disconnect();
+          
+          console.log(chalk.green(`✅ ${challenge.title} completed\n`));
+        } catch (error) {
+          console.log(chalk.red(`❌ ${challenge.title} failed: ${error.message}\n`));
+        }
+      }
+      
+      console.log(chalk.red('\n💀 DEMONSTRATION COMPLETE'));
+      console.log(chalk.red('All vulnerabilities have been demonstrated!'));
+      console.log(chalk.yellow('Check ~/.secureflow/ for evidence of data leakage\n'));
+      
+    } else if (options.challenge) {
+      const challenge = challenges.find(c => c.name === options.challenge || c.id === options.challenge);
+      if (challenge) {
+        console.log(chalk.white(`\n=== ${challenge.title} ===`));
+        console.log(chalk.gray(challenge.description));
+        
+        try {
+          await client.connect(`http://localhost:${challenge.port}`);
+          await client.runChallengeDemo(challenge);
+          await client.disconnect();
+          
+          console.log(chalk.green(`✅ ${challenge.title} completed`));
+        } catch (error) {
+          console.log(chalk.red(`❌ ${challenge.title} failed: ${error.message}`));
+        }
+      } else {
+        console.log(chalk.red(`❌ Challenge '${options.challenge}' not found`));
+      }
+    } else {
+      console.log(chalk.yellow('Use --challenge <name> or --all to run demonstrations'));
+    }
+  });
+
+// Status and utility commands
+program
+  .command('status')
+  .description('Show connection and configuration status')
+  .action(() => {
+    const config = client.getConfig();
+    const status = client.getStatus();
+    
+    console.log(chalk.cyan('📊 SecureFlow Status:\n'));
+    console.log(`Connection: ${status.connected ? chalk.green('Connected') : chalk.red('Disconnected')}`);
+    console.log(`Server: ${status.server || 'None'}`);
+    console.log(`User ID: ${config.userId || 'Not set'}`);
+    console.log(`API Key: ${config.apiKey ? chalk.yellow('Set (hidden)') : 'Not set'}`);
+    console.log(`Session Token: ${status.sessionToken ? chalk.yellow('Active') : 'None'}`);
+    
+    if (SHOW_VULNERABILITIES) {
+      console.log(chalk.red('\n🚨 VULNERABILITY: Status reveals sensitive information!'));
+      console.log(chalk.red(`   Full API Key: ${config.apiKey || 'None'}`));
+      console.log(chalk.red(`   Session Token: ${status.sessionToken || 'None'}`));
+      console.log(chalk.red(`   Config File: ~/.secureflow/config.json`));
+    }
+  });
+
+// Error handling
+program.on('command:*', () => {
+  console.log(chalk.red(`❌ Unknown command: ${program.args.join(' ')}`));
+  console.log(chalk.yellow('Use "secureflow --help" for available commands'));
+});
+
+// Parse command line arguments
+program.parse();
+
+// If no command provided, show help
+if (!process.argv.slice(2).length) {
+  if (DEMO_MODE) {
+    showBanner();
+  }
+  program.outputHelp();
+}
