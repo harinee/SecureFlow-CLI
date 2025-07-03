@@ -63,8 +63,9 @@ This CLI demonstrates the following vulnerability categories:
 ### Setup
 
 ```bash
-# Clone or download this project
-cd /path/to/mcp-cli-demo-client
+# Clone the repository
+git clone https://github.com/harinee/SecureFlow-CLI.git
+cd SecureFlow-CLI
 
 # Install dependencies
 npm install
@@ -263,7 +264,7 @@ For each vulnerability class, proper mitigation would include:
 ## File Structure
 
 ```
-mcp-cli-demo-client/
+SecureFlow-CLI/
 ├── package.json                    # Dependencies and scripts
 ├── secureflow                      # Main CLI executable
 ├── lib/
